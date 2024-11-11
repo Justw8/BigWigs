@@ -388,6 +388,14 @@ local function masterOptionToggled(self, event, value)
 			scrollFrame:AddChildren(getAdvancedToggleOption(scrollFrame, dropdown, module, bossOption))
 			scrollFrame:PerformLayout()
 		end
+		-- These are visible on the encounter options tab,
+		-- need to update them when the master option is toggled and the slave options are updated
+		local icons = masterOptionToggled
+		if icons then
+			for _, icon in next, icons do
+				icon:UpdateIconColors()
+			end
+		end
 	end
 
 	-- After :SetValue so it's not overwritten
@@ -690,7 +698,58 @@ end
 local function flagOnEnter(widget)
 	bwTooltip:SetOwner(widget.frame, "ANCHOR_TOPRIGHT")
 	bwTooltip:SetText(widget:GetUserData("tooltipText"), 1, 1, 1, true)
+
+	local isFlag = widget:GetUserData("flag")
+	if isFlag then
+		local enabled = getSlaveOption(widget)
+		local colorString = '|cFF436EEE%s|r'
+		if enabled then
+			bwTooltip:AddLine(colorString:format('Click to disable.'))
+		else
+			bwTooltip:AddLine(colorString:format('Click to enable.'))
+		end
+	end
 	bwTooltip:Show()
+end
+
+local function flagOnClick(widget)
+	local key = widget:GetUserData("key")
+	local module = widget:GetUserData("module")
+	local flag = widget:GetUserData("flag")
+	local enabled = getSlaveOption(widget)
+
+	if enabled then -- disable
+		module.db.profile[key] = module.db.profile[key] - flag
+	else
+		module.db.profile[key] = module.db.profile[key] + flag
+	end
+	widget:UpdateIconColors()
+
+	-- Update master toggle
+	local master = widget:GetUserData("master")
+	master:SetValue(getMasterOption(master))
+	-- Update tooltip
+	flagOnEnter(widget)
+end
+
+do -- Custom Icon Widget for Flags
+	local Type, Version = "FlagIcon", 1
+	local function Constructor()
+		local icon = AceGUI:Create("Icon")
+
+		function icon:UpdateIconColors()
+			local enabled = getSlaveOption(icon)
+			if enabled then
+				self.image:SetVertexColor(1, 1, 1, 1)
+			else
+				self.image:SetVertexColor(1, 0, 0, 0.5)
+			end
+		end
+
+		icon.image:SetVertexColor(1, 1, 1, 1) -- default
+		return icon
+	end
+	AceGUI:RegisterWidgetType(Type, Constructor, Version)
 end
 
 local function getDefaultToggleOption(scrollFrame, dropdown, module, bossOption)
@@ -783,15 +842,22 @@ local function getDefaultToggleOption(scrollFrame, dropdown, module, bossOption)
 		"EMPHASIZE", "ME_ONLY", "ME_ONLY_EMPHASIZE", "COUNTDOWN", "CASTBAR_COUNTDOWN", "FLASH", "ICON", "SAY", "SAY_COUNTDOWN",
 		"PROXIMITY", "INFOBOX", "ALTPOWER", "NAMEPLATE", "PRIVATE",
 	}
+
 	for i = 1, #showFlags do
 		local key = showFlags[i]
 		if hasOptionFlag(dbKey, module, key) then
-			local icon = AceGUI:Create("Icon")
+			local icon = AceGUI:Create("FlagIcon")
 			icon:SetWidth(16)
 			icon:SetImageSize(16, 16)
 			icon:SetUserData("tooltipText", L[key])
+			icon:SetUserData("flag", C[key])
+			icon:SetUserData("module", module)
+			icon:SetUserData("key", dbKey)
+			icon:SetUserData("master", check)
 			icon:SetCallback("OnEnter", flagOnEnter)
 			icon:SetCallback("OnLeave", bwTooltip_Hide)
+			icon:SetCallback("OnClick", flagOnClick)
+			icon:UpdateIconColors()
 
 			if key == "TANK_HEALER" then
 				-- add both "TANK" and "HEALER" icons
